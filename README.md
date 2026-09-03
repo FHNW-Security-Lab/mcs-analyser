@@ -55,11 +55,11 @@ keeps the program open until `Ctrl+C`. Standalone JSON results are written to
 
 The standalone graph continues beyond the analyzed avionics with explicitly
 marked physical boxes for autothrust/FADEC, ailerons, elevator, rudder,
-engines/thrust, rigid-body dynamics, and resulting position/attitude. Command
-links flow into those actors at the end of the control chain. Dashed feedback
-links return surface position, engine N1/EGT, position, attitude, air data, and
-radio height to the corresponding controller or sensor components. Those amber
-plant links are configured consequence relations, not claims about
+and engines/thrust. GPS, INS, and radio-navigation paths remain visibly
+upstream of navigation fusion, FMS, guidance, protection, and actuator control.
+The graph is deliberately forward-only and ends at the physical actors; it does
+not add engine, surface-position, or aircraft-state feedback. Those amber
+command links are configured consequence relations, not claims about
 angr-analyzed binaries.
 Message edges show a compact aviation formula and meaning first, while the
 complete Claripy predicates remain available as `raw_claripy_predicates`.

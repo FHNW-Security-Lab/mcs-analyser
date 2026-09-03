@@ -1,6 +1,6 @@
 import unittest
 
-from networkx import MultiDiGraph
+from networkx import MultiDiGraph, has_path
 
 from analyser.common import Config
 from analyser.common.constraint_summary import summarize_constraint
@@ -36,7 +36,7 @@ class ConstraintSummaryTests(unittest.TestCase):
         finally:
             Config.reset()
         self.assertEqual(len(graph.nodes), 2)
-        self.assertEqual(len(display.nodes), 9)
+        self.assertEqual(len(display.nodes), 7)
         self.assertIn('CONFIGURED · Autothrust / FADEC', display.nodes)
         self.assertIn('PHYSICAL · Engines / thrust', display.nodes)
         self.assertTrue(any(data.get('evidence') == 'configured plant overlay — not MCA-derived'
@@ -48,7 +48,17 @@ class ConstraintSummaryTests(unittest.TestCase):
         graph.add_node('Actuator Control Electronics', component_id='actuator_control')
         graph.add_node('Aircraft Dynamics Effect', component_id='aircraft_effect')
         graph.add_node('Flight Management System', component_id='flight_management')
+        graph.add_node('Flight Guidance Computer', component_id='flight_guidance')
+        graph.add_node('Flight Envelope Protection', component_id='envelope_protection')
+        graph.add_node('Navigation Fusion', component_id='navigation_fusion')
         graph.add_node('GNSS Receiver', component_id='gnss_receiver')
+        graph.add_node('Inertial Reference System', component_id='inertial_reference')
+        graph.add_edge('GNSS Receiver', 'Navigation Fusion', msg_id=1, type='MSG_AFDX_VL_GNSS_FIX')
+        graph.add_edge('Inertial Reference System', 'Navigation Fusion', msg_id=2, type='MSG_AFDX_VL_INS_STATE')
+        graph.add_edge('Navigation Fusion', 'Flight Management System', msg_id=3, type='MSG_AFDX_VL_NAV_SOLUTION')
+        graph.add_edge('Flight Management System', 'Flight Guidance Computer', msg_id=4, type='MSG_AFDX_VL_FMS_TARGET')
+        graph.add_edge('Flight Guidance Computer', 'Flight Envelope Protection', msg_id=5, type='MSG_AFDX_VL_GUIDANCE_COMMAND')
+        graph.add_edge('Flight Envelope Protection', 'Actuator Control Electronics', msg_id=6, type='MSG_AFDX_VL_ENVELOPE_COMMAND')
         graph.add_edge(
             'Actuator Control Electronics',
             'Aircraft Dynamics Effect',
@@ -73,14 +83,11 @@ class ConstraintSummaryTests(unittest.TestCase):
             ('CONFIGURED · Autothrust / FADEC', 'PHYSICAL · Engines / thrust', 'PLANT · fuel / thrust command'),
             display_links,
         )
-        self.assertIn(
-            ('PHYSICAL · Position + attitude', 'GNSS Receiver', 'PLANT · position / velocity measurement'),
-            display_links,
-        )
-        self.assertIn(
-            ('PHYSICAL · Ailerons', 'Actuator Control Electronics', 'PLANT · surface-position feedback'),
-            display_links,
-        )
+        for actor in ('PHYSICAL · Ailerons', 'PHYSICAL · Elevator', 'PHYSICAL · Rudder', 'PHYSICAL · Engines / thrust'):
+            self.assertEqual(display.out_degree(actor), 0)
+        for source in ('GNSS Receiver', 'Inertial Reference System'):
+            for surface in ('PHYSICAL · Ailerons', 'PHYSICAL · Elevator', 'PHYSICAL · Rudder'):
+                self.assertTrue(has_path(display, source, surface))
         self.assertEqual(original_nodes, set(graph.nodes))
         self.assertEqual(original_edges, list(graph.edges(keys=True, data=True)))
         self.assertNotIn('PHYSICAL · Ailerons', graph.nodes)

@@ -49,10 +49,10 @@ runtime and reachability layers.
 
 The visualization continues beyond these 20 analyzed binaries with a clearly
 marked configured physical layer: autothrust/FADEC, engines, ailerons,
-elevator, rudder, rigid-body dynamics, and the resulting aircraft state.
-Measurement feedback returns surface position, engine N1/EGT, geographic
-position, attitude, pressure/airspeed, and radio height to the appropriate
-controller or sensor boundary. These physical edges are not additional native
+elevator, and rudder. These actors are terminal graph nodes: commands flow into
+them, but no engine, surface-position, or state-measurement edges return to the
+avionics. This keeps the influence path from GNSS/INS through navigation fusion
+and flight control explicit. The physical edges are not additional native
 binaries and are never included in the MCA evidence export.
 
 Run both native builds and analyses from the repository root with:

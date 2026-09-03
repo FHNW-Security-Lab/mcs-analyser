@@ -45,7 +45,6 @@ interface PhysicalTransition {
   targetId: string
   label: string
   description: string
-  feedback?: boolean
 }
 
 interface McaTopologyGraphProps {
@@ -119,17 +118,6 @@ const graphStyles: StylesheetJson = [
     },
   },
   {
-    selector: 'node.live-state-node',
-    style: {
-      'background-color': '#182a28',
-      'border-color': '#dce9e7',
-      'border-width': 3,
-      'shape': 'ellipse',
-      'height': 68,
-      'width': 116,
-    },
-  },
-  {
     selector: 'node.scenario-node',
     style: {
       'background-color': '#211b28',
@@ -192,16 +180,6 @@ const graphStyles: StylesheetJson = [
       'opacity': 0.82,
       'target-arrow-color': '#70a6c8',
       'width': 2.4,
-    },
-  },
-  {
-    selector: 'edge.measurement-edge',
-    style: {
-      'line-color': '#66858d',
-      'line-style': 'dotted',
-      'opacity': 0.48,
-      'target-arrow-color': '#66858d',
-      'width': 1.6,
     },
   },
   {
@@ -302,26 +280,14 @@ function buildGraphElements(
     {
       id: 'plant:engines',
       label: 'Engines / thrust',
-      description: 'The engines accept the FADEC command and provide bounded thrust to the aircraft dynamics model.',
+      description: 'The engines accept the FADEC command and produce bounded thrust as a terminal physical consequence.',
       relation: 'Configured propulsion relation; engine-control software is outside the analyzed binaries.',
-    },
-    {
-      id: 'plant:rigid-body',
-      label: 'Aircraft rigid-body plant',
-      description: 'The bounded simulation plant integrates forces and moments into attitude, altitude, and course.',
-      relation: 'Discrete-time flight-dynamics assumption; not an MCA message transition.',
-    },
-    {
-      id: 'plant:live-state',
-      label: 'ALB physical state',
-      description: 'Current simulated aircraft roll, pitch, yaw, altitude, and geographic course.',
-      relation: 'Live simulator telemetry used for visualization and safety predicates.',
     },
   ]
   for (const physical of physicalNodes) {
     elements.push({
       data: { id: physical.id, label: physical.label, role: 'physical', kind: 'plant' },
-      classes: `plant-node ${physical.id === 'plant:live-state' ? 'live-state-node' : ''}`,
+      classes: 'plant-node',
     })
   }
   const plantSourceId = componentIds.has('actuator_control')
@@ -336,40 +302,15 @@ function buildGraphElements(
         { id: 'plant-edge:aileron-command', sourceId: plantSourceId, targetId: 'plant:ailerons', label: 'roll command', description: 'Maps the bounded roll actuator word to aileron deflection.' },
         { id: 'plant-edge:elevator-command', sourceId: plantSourceId, targetId: 'plant:elevator', label: 'pitch command', description: 'Maps the bounded pitch actuator word to elevator deflection.' },
         { id: 'plant-edge:rudder-command', sourceId: plantSourceId, targetId: 'plant:rudder', label: 'yaw command', description: 'Maps the bounded yaw actuator word to rudder deflection.' },
-        { id: 'plant-edge:aileron-feedback', sourceId: 'plant:ailerons', targetId: plantSourceId, label: 'surface position', description: 'Returns measured aileron position to actuator monitoring.', feedback: true },
-        { id: 'plant-edge:elevator-feedback', sourceId: 'plant:elevator', targetId: plantSourceId, label: 'surface position', description: 'Returns measured elevator position to actuator monitoring.', feedback: true },
-        { id: 'plant-edge:rudder-feedback', sourceId: 'plant:rudder', targetId: plantSourceId, label: 'surface position', description: 'Returns measured rudder position to actuator monitoring.', feedback: true },
-        { id: 'plant-edge:aileron-moment', sourceId: 'plant:ailerons', targetId: 'plant:rigid-body', label: 'roll moment', description: 'Applies the bounded aileron roll moment to the rigid-body plant.' },
-        { id: 'plant-edge:elevator-moment', sourceId: 'plant:elevator', targetId: 'plant:rigid-body', label: 'pitch moment', description: 'Applies the bounded elevator pitch moment to the rigid-body plant.' },
-        { id: 'plant-edge:rudder-moment', sourceId: 'plant:rudder', targetId: 'plant:rigid-body', label: 'yaw moment', description: 'Applies the bounded rudder yaw moment to the rigid-body plant.' },
         ...(componentIds.has('flight_management') ? [
           { id: 'plant-edge:thrust-target', sourceId: 'flight_management', targetId: 'plant:autothrust', label: 'speed / thrust target', description: 'Supplies the selected speed and thrust mode to the configured autothrust controller.' },
         ] : []),
         { id: 'plant-edge:engine-command', sourceId: 'plant:autothrust', targetId: 'plant:engines', label: 'fuel / thrust command', description: 'The FADEC converts the target into bounded engine actuation.' },
-        { id: 'plant-edge:engine-feedback', sourceId: 'plant:engines', targetId: 'plant:autothrust', label: 'N1 / EGT feedback', description: 'Engine speed and temperature sensors close the propulsion-control loop.', feedback: true },
-        { id: 'plant-edge:thrust', sourceId: 'plant:engines', targetId: 'plant:rigid-body', label: 'bounded thrust', description: 'Applies bounded engine thrust to the aircraft dynamics model.' },
-        { id: 'plant-edge:state', sourceId: 'plant:rigid-body', targetId: 'plant:live-state', label: 'integrated state', description: 'Advances the discrete coordinated-turn state used by the simulation and safety predicates.' },
-        ...([
-          ['gnss_receiver', 'position / velocity', 'GNSS receiver observes the resulting position and groundspeed.'],
-          ['inertial_reference', 'specific force / body rates', 'IRS sensors observe accelerations and angular rates.'],
-          ['radio_navigation', 'navaid geometry', 'Radio navigation observes aircraft geometry relative to configured navaids.'],
-          ['air_data', 'pressure / airspeed', 'Air-data sensors observe pressure altitude and airspeed.'],
-          ['attitude_reference', 'attitude / body rates', 'Attitude sensors observe the resulting orientation and rates.'],
-          ['radio_altimeter_1', 'radio height channel 1', 'The first radio altimeter observes height above terrain.'],
-          ['radio_altimeter_2', 'radio height channel 2', 'The independent second channel observes height above terrain.'],
-        ] as const).filter(([targetId]) => componentIds.has(targetId)).map(([targetId, label, description]) => ({
-          id: `plant-edge:measurement:${targetId}`,
-          sourceId: 'plant:live-state',
-          targetId,
-          label,
-          description,
-          feedback: true,
-        })),
       ]
     : []
   physicalEdges.forEach((edge) => elements.push({
     data: { id: edge.id, source: edge.sourceId, target: edge.targetId, label: edge.label, kind: 'plant-edge' },
-    classes: `plant-edge ${edge.feedback ? 'measurement-edge' : ''}`,
+    classes: 'plant-edge',
   }))
 
   const scenarioNodes: ScenarioElement[] = []
@@ -461,16 +402,14 @@ function runLayout(cy: Core, layout: GraphLayout) {
       ['flight_management', { x: 605, y: 135 }],
       ['flight_guidance', { x: 605, y: 260 }],
       ['envelope_protection', { x: 605, y: 385 }],
-      ['actuator_control', { x: 790, y: 205 }],
-      ['aircraft_effect', { x: 1045, y: 500 }],
-      ['primary_display', { x: 1185, y: 500 }],
-      ['plant:autothrust', { x: 790, y: 430 }],
-      ['plant:ailerons', { x: 920, y: 105 }],
-      ['plant:elevator', { x: 920, y: 185 }],
-      ['plant:rudder', { x: 920, y: 265 }],
-      ['plant:engines', { x: 920, y: 430 }],
-      ['plant:rigid-body', { x: 1045, y: 280 }],
-      ['plant:live-state', { x: 1185, y: 280 }],
+      ['actuator_control', { x: 880, y: 205 }],
+      ['aircraft_effect', { x: 880, y: 535 }],
+      ['primary_display', { x: 1060, y: 535 }],
+      ['plant:autothrust', { x: 880, y: 420 }],
+      ['plant:ailerons', { x: 1140, y: 105 }],
+      ['plant:elevator', { x: 1140, y: 190 }],
+      ['plant:rudder', { x: 1140, y: 275 }],
+      ['plant:engines', { x: 1140, y: 420 }],
     ])
     cy.nodes().positions((node) => {
       const known = knownPositions.get(node.id())
@@ -875,7 +814,7 @@ export function McaTopologyGraph({ artifact, profile, scenario, scenarioEnabled,
 
       <div className="topology-shell">
         <div className="topology-stage">
-          <div className="aircraft-boundary-label"><LocateFixed size={13} /><span>Aircraft avionics + physical boundary</span><small>solid: angr / MCA · dashed blue: commands/plant · dotted gray: measurements</small></div>
+          <div className="aircraft-boundary-label"><LocateFixed size={13} /><span>Aircraft avionics + physical boundary</span><small>solid: angr / MCA · dashed blue: configured command to terminal actor</small></div>
           <div ref={containerRef} className="topology-canvas" role="img" aria-label={`${profile} aircraft graph with ${components.length} analyzed components, ${transitions.length} native transitions, and an explicit physical plant`} />
           <div className="topology-legend" aria-label="Graph legend">
             <span><i className="legend-source" /> sensor / source</span>
@@ -884,8 +823,7 @@ export function McaTopologyGraph({ artifact, profile, scenario, scenarioEnabled,
             <span><i className="legend-reachable" /> MCA reachable</span>
             <span><i className="legend-discovery" /> discovery only</span>
             <span><i className="legend-scenario" /> runtime scenario</span>
-            <span><i style={{ width: 15, height: 0, border: 0, borderTop: '2px dashed #70a6c8', borderRadius: 0, background: 'none' }} /> plant assumption</span>
-            <span><i className="legend-feedback" /> sensor feedback</span>
+            <span><i style={{ width: 15, height: 0, border: 0, borderTop: '2px dashed #70a6c8', borderRadius: 0, background: 'none' }} /> terminal actuator</span>
             <span><i className="legend-lineage" /> selected lineage</span>
           </div>
         </div>

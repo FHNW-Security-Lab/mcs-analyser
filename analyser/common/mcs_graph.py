@@ -112,8 +112,6 @@ class MCSGraph(MultiDiGraph):
             ('PHYSICAL · Elevator', 'control surface', 'Produces aircraft pitch moment.'),
             ('PHYSICAL · Rudder', 'control surface', 'Produces aircraft yaw moment.'),
             ('PHYSICAL · Engines / thrust', 'propulsion', 'Accepts the FADEC command and produces bounded thrust.'),
-            ('PHYSICAL · Aircraft dynamics', 'rigid-body plant', 'Integrates aerodynamic forces and moments into aircraft motion.'),
-            ('PHYSICAL · Position + attitude', 'physical state', 'Geographic position, altitude, pitch, roll, yaw, and airspeed.'),
         ]
         for name, role, description in physical_nodes:
             display_graph.add_node(
@@ -134,7 +132,6 @@ class MCSGraph(MultiDiGraph):
         }
         actuator = component_name_by_id.get('actuator_control')
         fms = component_name_by_id.get('flight_management')
-        observer = component_name_by_id.get('aircraft_effect')
 
         def plant_edge(source: str | None, target: str | None, name: str) -> None:
             if source is None or target is None or source not in display_graph or target not in display_graph:
@@ -152,28 +149,8 @@ class MCSGraph(MultiDiGraph):
 
         for surface in ('PHYSICAL · Ailerons', 'PHYSICAL · Elevator', 'PHYSICAL · Rudder'):
             plant_edge(actuator, surface, 'surface command')
-            plant_edge(surface, 'PHYSICAL · Aircraft dynamics', 'aerodynamic moment')
-            plant_edge(surface, actuator, 'surface-position feedback')
         plant_edge(fms, 'CONFIGURED · Autothrust / FADEC', 'speed / thrust target')
         plant_edge('CONFIGURED · Autothrust / FADEC', 'PHYSICAL · Engines / thrust', 'fuel / thrust command')
-        plant_edge('PHYSICAL · Engines / thrust', 'CONFIGURED · Autothrust / FADEC', 'N1 / EGT feedback')
-        plant_edge('PHYSICAL · Engines / thrust', 'PHYSICAL · Aircraft dynamics', 'bounded thrust')
-        plant_edge('PHYSICAL · Aircraft dynamics', 'PHYSICAL · Position + attitude', 'integrated motion')
-        plant_edge('PHYSICAL · Position + attitude', observer, 'observed consequence')
-
-        # Close the visual control loop. These are environment/measurement
-        # relations into the analyzed sensor binaries, not recovered bus edges.
-        feedback_by_component = {
-            'gnss_receiver': 'position / velocity measurement',
-            'inertial_reference': 'specific force / angular-rate measurement',
-            'radio_navigation': 'navaid geometry measurement',
-            'air_data': 'pressure / airspeed measurement',
-            'attitude_reference': 'attitude / body-rate measurement',
-            'radio_altimeter_1': 'radio-height measurement',
-            'radio_altimeter_2': 'independent radio-height measurement',
-        }
-        for component_id, measurement in feedback_by_component.items():
-            plant_edge('PHYSICAL · Position + attitude', component_name_by_id.get(component_id), measurement)
         return display_graph
 
     @classmethod

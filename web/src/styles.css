@@ -497,10 +497,9 @@ main { overflow-x: clip; }
 .topology-legend i { width: 12px; height: 7px; border: 1px solid #5689a3; border-radius: 2px; background: #102833; }
 .topology-legend .legend-processor { border-color: #4b7776; background: #132a2d; }
 .topology-legend .legend-safeguard { border-color: #4fd1b5; background: #102b27; }
-.topology-legend .legend-reachable, .topology-legend .legend-discovery, .topology-legend .legend-scenario, .topology-legend .legend-feedback, .topology-legend .legend-lineage { width: 15px; height: 0; border: 0; border-top: 2px solid #5b8792; border-radius: 0; background: none; }
+.topology-legend .legend-reachable, .topology-legend .legend-discovery, .topology-legend .legend-scenario, .topology-legend .legend-lineage { width: 15px; height: 0; border: 0; border-top: 2px solid #5b8792; border-radius: 0; background: none; }
 .topology-legend .legend-discovery { border-top-style: dashed; border-color: #bd9956; }
 .topology-legend .legend-scenario { border-top-style: dotted; border-color: #c97870; }
-.topology-legend .legend-feedback { border-top-style: dotted; border-color: #66858d; }
 .topology-legend .legend-lineage { border-width: 3px; border-color: #ff6375; }
 .topology-inspector { min-width: 0; min-height: 0; overflow-y: auto; padding: 17px; border-left: 1px solid var(--border); background: #09181d; scrollbar-gutter: stable; }
 .inspector-title-row { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 13px; border-bottom: 1px solid var(--border); gap: 10px; }

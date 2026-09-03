@@ -188,46 +188,39 @@ when no symbolic constraint record exists for the terminal message.
 
 ## Physical state model
 
-### Closed-loop command and measurement architecture
+### Forward command-to-actor architecture
 
 The system visualization extends the native message graph to the physical
-consequences at the end of the control chain. The native actuator electronics
-command the ailerons, elevator, and rudder. A configured autothrust/FADEC
-relation translates the FMS speed/thrust target into an engine command. The
-control surfaces and engines then produce the moments and thrust consumed by
-the bounded rigid-body plant.
+actors at the end of the control chain. GPS, INS, and radio navigation visibly
+influence navigation fusion and therefore every downstream lateral command.
+The native actuator electronics command the ailerons, elevator, and rudder. A
+configured autothrust/FADEC relation translates the FMS speed/thrust target
+into an engine command.
 
 ```mermaid
 flowchart LR
-    FMS[Flight management] -->|speed / thrust target| FADEC[Configured autothrust / FADEC]
-    FADEC -->|fuel / thrust command| ENG[Engines / thrust]
-    ENG -.->|N1 / EGT feedback| FADEC
+    GPS[GNSS receiver] --> FUS[Navigation fusion]
+    INS[Inertial reference] --> FUS
+    RADIO[Radio navigation] --> FUS
+    FUS --> FMS[Flight management]
+    FMS --> FG[Flight guidance]
+    FG --> ENV[Envelope protection]
 
-    ENV[Envelope protection] --> ACE[Actuator control electronics]
+    FMS -->|speed / thrust target| FADEC[Configured autothrust / FADEC]
+    FADEC -->|fuel / thrust command| ENG[Engines / thrust]
+
+    ENV --> ACE[Actuator control electronics]
     ACE -->|roll command| AIL[Ailerons]
     ACE -->|pitch command| ELE[Elevator]
     ACE -->|yaw command| RUD[Rudder]
-    AIL -.->|surface position| ACE
-    ELE -.->|surface position| ACE
-    RUD -.->|surface position| ACE
-
-    AIL -->|roll moment| PLANT[Aircraft rigid-body plant]
-    ELE -->|pitch moment| PLANT
-    RUD -->|yaw moment| PLANT
-    ENG -->|thrust| PLANT
-    PLANT --> STATE[Position + attitude + airspeed]
-
-    STATE -.->|position / velocity| GNSS[GNSS receiver]
-    STATE -.->|specific force / rates| IRS[Inertial reference]
-    STATE -.->|attitude / rates| AHRS[Attitude and heading reference]
-    STATE -.->|pressure / airspeed| ADC[Air data computer]
-    STATE -.->|radio height| RA[Radio altimeters]
 ```
 
-Solid native AFDX/message transitions remain analyzer-derived. Dashed physical
-command and plant edges, and dotted measurement-feedback edges, are configured
-model relations. They are deliberately added only to a display copy of the
-graph: they never enter the exported angr/MCA evidence or component count.
+The control surfaces and engines are terminal graph nodes and never publish a
+return edge. This keeps causal explanations strictly left-to-right. Solid
+AFDX/message transitions remain analyzer-derived; dashed terminal command
+edges are configured relations added only to a display copy. They never enter
+the exported angr/MCA evidence or component count. The separate simulator and
+aircraft-state panel still compute and display the resulting motion.
 
 The runtime and bounded model keep distinct values for:
 
@@ -433,7 +426,7 @@ provides:
 - selection-scoped readable constraint explanations, exact captured Claripy
   records, decoded concrete witnesses, hashes, evidence tables, and run status;
 - reachability classification and concrete witnesses;
-- an aircraft-state terminal actor and backward unsafe-state workbench with
+- a live aircraft-state panel beside the terminal actuator graph and a backward unsafe-state workbench with
   attributable input witnesses and secure blocking components;
 - explicit scope/limitation labels.
 
