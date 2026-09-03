@@ -97,8 +97,7 @@ def main() -> int:
 
     try:
         print(f"Starting standalone Schnauzer at {url}", flush=True)
-        schnauzer_entrypoint = Path(sys.executable).with_name("schnauzer-server")
-        server_command = [str(schnauzer_entrypoint)] if schnauzer_entrypoint.is_file() else [sys.executable, "-m", "schnauzer.server"]
+        server_command = [sys.executable, "-m", "aviation_demo.standalone_schnauzer"]
         server_process = subprocess.Popen(
             [
                 *server_command,

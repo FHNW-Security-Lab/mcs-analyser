@@ -1,4 +1,4 @@
-from networkx import MultiDiGraph
+from networkx import MultiDiGraph, ancestors
 from distinctipy import get_colors
 from colorsys import rgb_to_hls, hls_to_rgb
 
@@ -151,6 +151,35 @@ class MCSGraph(MultiDiGraph):
             plant_edge(actuator, surface, 'surface command')
         plant_edge(fms, 'CONFIGURED · Autothrust / FADEC', 'speed / thrust target')
         plant_edge('CONFIGURED · Autothrust / FADEC', 'PHYSICAL · Engines / thrust', 'fuel / thrust command')
+
+        # Schnauzer's native origin tracer starts on message edges. Terminal
+        # physical actors have no analyzed output message by design, so mark
+        # them as click-to-trace sinks and expose their sensor origins in the
+        # inspector. The standalone UI extension uses the directed topology to
+        # highlight every predecessor edge without changing MCA evidence.
+        terminal_actors = (
+            'PHYSICAL · Ailerons',
+            'PHYSICAL · Elevator',
+            'PHYSICAL · Rudder',
+            'PHYSICAL · Engines / thrust',
+        )
+        for actor in terminal_actors:
+            origins = sorted(
+                str(display_graph.nodes[node].get('name', node))
+                for node in ancestors(display_graph, actor)
+                if (
+                    display_graph.nodes[node].get('role') == 'source'
+                    or (
+                        display_graph.nodes[node].get('component_id')
+                        and display_graph.in_degree(node) == 0
+                    )
+                )
+            )
+            display_graph.nodes[actor].update({
+                'terminal_actor': True,
+                'click_action': 'highlight complete upstream sensor lineage',
+                'upstream_sensors': ', '.join(origins) if origins else 'none discovered',
+            })
         return display_graph
 
     @classmethod

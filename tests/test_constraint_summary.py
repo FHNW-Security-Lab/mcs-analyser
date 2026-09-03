@@ -85,9 +85,15 @@ class ConstraintSummaryTests(unittest.TestCase):
         )
         for actor in ('PHYSICAL · Ailerons', 'PHYSICAL · Elevator', 'PHYSICAL · Rudder', 'PHYSICAL · Engines / thrust'):
             self.assertEqual(display.out_degree(actor), 0)
+            self.assertTrue(display.nodes[actor]['terminal_actor'])
+            self.assertIn('highlight complete upstream sensor lineage', display.nodes[actor]['click_action'])
         for source in ('GNSS Receiver', 'Inertial Reference System'):
             for surface in ('PHYSICAL · Ailerons', 'PHYSICAL · Elevator', 'PHYSICAL · Rudder'):
                 self.assertTrue(has_path(display, source, surface))
+        self.assertEqual(
+            display.nodes['PHYSICAL · Elevator']['upstream_sensors'],
+            'GNSS Receiver, Inertial Reference System',
+        )
         self.assertEqual(original_nodes, set(graph.nodes))
         self.assertEqual(original_edges, list(graph.edges(keys=True, data=True)))
         self.assertNotIn('PHYSICAL · Ailerons', graph.nodes)

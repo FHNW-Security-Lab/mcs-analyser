@@ -222,6 +222,12 @@ edges are configured relations added only to a display copy. They never enter
 the exported angr/MCA evidence or component count. The separate simulator and
 aircraft-state panel still compute and display the resulting motion.
 
+In the standalone Schnauzer application, each terminal actor is marked as a
+lineage target. Clicking it highlights all directed predecessor nodes and edges
+back to the sensor sources and dims unrelated graph elements. This topology
+trace extends Schnauzer's message-edge origin tracing to configured physical
+sinks without manufacturing analyzer messages or adding reverse edges.
+
 The runtime and bounded model keep distinct values for:
 
 - true aircraft position and attitude;

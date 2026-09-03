@@ -61,6 +61,9 @@ The graph is deliberately forward-only and ends at the physical actors; it does
 not add engine, surface-position, or aircraft-state feedback. Those amber
 command links are configured consequence relations, not claims about
 angr-analyzed binaries.
+Clicking a physical actor highlights every directed predecessor path back to
+its sensor origins and dims unrelated components. The actor details list those
+upstream sensors; no trace-attribute selection is required.
 Message edges show a compact aviation formula and meaning first, while the
 complete Claripy predicates remain available as `raw_claripy_predicates`.
 
