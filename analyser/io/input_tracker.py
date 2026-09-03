@@ -27,6 +27,19 @@ class InputTracker:
     flattened_with_context: list[Message] = []
     component: Component = None
 
+    @classmethod
+    def reset(cls):
+        """Reset all global tracker state before starting another analysis."""
+        cls.enumerator = None
+        cls.yield_unconstrained = False
+        cls.input_combinations = None
+        cls.max_inputs_counted = 0
+        cls.input_counter = 0
+        cls.consumed_messages.clear()
+        cls.flattened_with_context.clear()
+        cls.component = None
+        bv_module.var_counter = itertools.count()
+
 
     @classmethod
     def track(cls, component: Component):
@@ -124,13 +137,13 @@ class InputTracker:
 
 
     @classmethod
-    def generate_input_combinations(cls, allow_repetition=False, warn_threshold=100):
+    def generate_input_combinations(cls, allow_repetition=False, warn_threshold=1000):
         """
         Lazily generates all possible permutations of the inputs.
 
         Args:
             allow_repetition: Whether to allow selecting the same input multiple times (default: False)
-            warn_threshold: Number of combinations above which to log.debug a warning
+            warn_threshold: Number of combinations above which to emit a warning
 
         Yields:
             Lists representing permutations of the inputs
@@ -170,4 +183,3 @@ class InputTracker:
         else:
             # Use permutations for permutations without repetition
             yield from permutations(inputs, k)
-

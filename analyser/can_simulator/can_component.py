@@ -5,7 +5,8 @@ log = logger(__name__)
 
 class Component:
 
-    def __init__(self, name: str, path: 'Path'):
+    def __init__(self, name: str, path: 'Path', description: str = "",
+                 metadata: dict = None):
         """
         A `Component` references a binary and holds some metadata needed during analysis.
 
@@ -24,6 +25,9 @@ class Component:
         """
         self.name = name
         self.path = path
+        self.description = description
+        self.metadata = dict(metadata or {})
+        self.component_id = self.metadata.get('id', name)
         self.max_expected_inputs = 0
         self.is_analysed = False
         self.consumed_ids: set[int] = set()

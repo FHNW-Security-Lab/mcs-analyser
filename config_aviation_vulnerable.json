@@ -1,0 +1,234 @@
+{
+  "schema_version": "albatros.aviation-mca-config/1.0.0",
+  "profile": "vulnerable",
+  "system": {
+    "id": "albatros-afdx-aircraft-vulnerable",
+    "name": "ALBATROS Vulnerable AFDX Aircraft",
+    "version": "1.0.0",
+    "architecture": "x86-64 fixed-point native component model"
+  },
+  "analysis_reference": {
+    "fix": {"name": "Berlin reference fix", "latitude": 52.520008, "longitude": 13.404954},
+    "route_monitor": {"max_position_residual_m": 45.0, "max_cross_track_nm": 0.025},
+    "safety_envelope": {"max_pitch_deg": 18.0, "max_roll_deg": 32.0}
+  },
+  "protocol": {
+    "name": "ARINC 664 Part 7 / AFDX-like demonstrator protocol",
+    "transport": "stdio analysis harness: uint64 message id followed by uint64 payload",
+    "endianness": "host little-endian",
+    "position_encoding": "signed latitude_e6:int32 | signed longitude_e6:int32",
+    "attitude_encoding": "pitch_cdeg:int16 | roll_cdeg:int16 | yaw_cdeg:uint16 | flags:uint16"
+  },
+  "var_length": 64,
+  "input_hooks": ["scanf"],
+  "output_hooks": ["printf"],
+  "msg_id_prefix": "MSG_AFDX_",
+  "components_dir": "./bin/aviation/vulnerable",
+  "components": [
+    {
+      "id": "gnss_receiver",
+      "name": "GNSS Receiver",
+      "filename": "c01_gnss_receiver",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-NAV-1",
+      "assurance": "receiver ICD validation only",
+      "description": "GNSS receiver producing WGS-84 fixed-point position frames on an AFDX virtual link"
+    },
+    {
+      "id": "inertial_reference",
+      "name": "Inertial Reference System",
+      "filename": "c02_inertial_reference",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-NAV-2",
+      "assurance": "alignment and transport-wander monitor",
+      "description": "Independent IRS position estimate with an operational-region plausibility monitor"
+    },
+    {
+      "id": "radio_navigation",
+      "name": "Radio Navigation Receiver",
+      "filename": "c03_radio_navigation",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-NAV-3",
+      "assurance": "regional navaid coverage monitor",
+      "description": "Independent DME/DME or VOR/DME fixed-point position source"
+    },
+    {
+      "id": "air_data",
+      "name": "Air Data Computer",
+      "filename": "c04_air_data_computer",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-ADC",
+      "assurance": "range and consistency validation",
+      "description": "Altitude, vertical-speed and indicated-airspeed source"
+    },
+    {
+      "id": "attitude_reference",
+      "name": "Attitude and Heading Reference",
+      "filename": "c05_attitude_reference",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-AHRS",
+      "assurance": "physical attitude range validation",
+      "description": "Pitch, roll and true-heading source in centidegree fixed point"
+    },
+    {
+      "id": "weather_radar",
+      "name": "Weather Radar",
+      "filename": "c06_weather_radar",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-WXR",
+      "assurance": "weather product range validation",
+      "description": "Wind, turbulence and icing inputs used by the flight-management logic"
+    },
+    {
+      "id": "navigation_fusion",
+      "name": "Vulnerable Navigation Fusion",
+      "filename": "c07_navigation_fusion",
+      "version": "1.0.0-vulnerable",
+      "role": "processor",
+      "partition": "IMA-NAV-FUSION",
+      "assurance": "GNSS syntactic validation without cross-source consistency",
+      "known_defect": "Any syntactically valid GNSS coordinate receives navigation authority",
+      "description": "Trusts GNSS positions without applying the route-consistency safeguard"
+    },
+    {
+      "id": "flight_management",
+      "name": "Flight Management System",
+      "filename": "c08_flight_management",
+      "version": "1.0.0",
+      "role": "processor",
+      "partition": "IMA-FMS",
+      "assurance": "bounded fixed-point guidance target generation",
+      "description": "Computes lateral guidance targets and publishes the causally tracked position"
+    },
+    {
+      "id": "flight_guidance",
+      "name": "Flight Guidance Computer",
+      "filename": "c09_flight_guidance",
+      "version": "1.0.0",
+      "role": "processor",
+      "partition": "IMA-FG",
+      "assurance": "attitude correction and command shaping",
+      "description": "Converts FMS and measured-attitude inputs into pitch/roll/yaw commands"
+    },
+    {
+      "id": "envelope_protection",
+      "name": "Vulnerable Envelope Protection",
+      "filename": "c10_envelope_protection",
+      "version": "1.0.0-vulnerable",
+      "role": "safeguard",
+      "partition": "FCC-PRIMARY",
+      "assurance": "pitch and roll limiting except in defective NAV_DIRECT mode",
+      "known_defect": "NAV_DIRECT guidance bypasses the 18 degree pitch and 32 degree roll command limits",
+      "description": "Contains a direct-mode protection bypass that can propagate spoof-induced over-bank commands"
+    },
+    {
+      "id": "actuator_control",
+      "name": "Actuator Control Electronics",
+      "filename": "c11_actuator_control",
+      "version": "1.0.0",
+      "role": "processor",
+      "partition": "ACE-1",
+      "assurance": "mechanical travel monitor",
+      "description": "Checks commands against physical travel, which is wider than the certified flight envelope"
+    },
+    {
+      "id": "aircraft_effect",
+      "name": "Aircraft Dynamics Effect",
+      "filename": "c12_aircraft_effect",
+      "version": "1.0.0",
+      "role": "effect",
+      "partition": "PLANT-MODEL",
+      "assurance": "safety-property observation point",
+      "description": "Classifies reachable position and attitude effects as nominal, diverged or unsafe"
+    },
+    {
+      "id": "primary_display",
+      "name": "Primary Flight Display",
+      "filename": "c13_primary_display",
+      "version": "1.0.0",
+      "role": "sink",
+      "partition": "IMA-DISPLAY",
+      "assurance": "independent state annunciation",
+      "description": "Consumer-only terminal sink for nominal, diverged and unsafe aircraft states"
+    },
+    {
+      "id": "data_loader",
+      "name": "EFB Data Loader Boundary",
+      "filename": "c14_data_loader",
+      "version": "1.1.0",
+      "role": "source",
+      "partition": "ASD-DLS",
+      "assurance": "typed route-load publication only",
+      "description": "Models the EFB/DLS trust-boundary input as a fixed-width active-leg route load"
+    },
+    {
+      "id": "route_integrity",
+      "name": "Vulnerable Route Load Integrity",
+      "filename": "c15_route_integrity",
+      "version": "1.1.0-vulnerable",
+      "role": "safeguard",
+      "partition": "ACD-GATEWAY",
+      "assurance": "no signature, revision, or corridor enforcement",
+      "known_defect": "Every DLS route load is granted active-route authority",
+      "description": "Passes an untrusted EFB/DLS active-leg fix directly to the flight-management system"
+    },
+    {
+      "id": "control_domain_ingress",
+      "name": "Adversarial Control-Domain Ingress",
+      "filename": "c16_control_domain_ingress",
+      "version": "1.1.0",
+      "role": "source",
+      "partition": "ACD-BOUNDARY",
+      "assurance": "explicit untrusted-source labeling",
+      "description": "Synthetic boundary source for post-fusion navigation injection and forged guidance frames"
+    },
+    {
+      "id": "afdx_ingress_guard",
+      "name": "Vulnerable AFDX Publisher Guard",
+      "filename": "c17_afdx_ingress_guard",
+      "version": "1.1.0-vulnerable",
+      "role": "safeguard",
+      "partition": "ACD-VL-GUARD",
+      "assurance": "message-label routing without publisher authorization",
+      "known_defect": "Untrusted navigation and guidance labels are republished onto authoritative virtual links",
+      "description": "Converts an untrusted but well-formed frame into an authoritative navigation or guidance frame"
+    },
+    {
+      "id": "radio_altimeter_1",
+      "name": "Radio Altimeter Channel 1",
+      "filename": "c18_radio_altimeter_1",
+      "version": "1.1.0",
+      "role": "source",
+      "partition": "IMA-RA-1",
+      "assurance": "ARINC-429 radio-height range and validity encoding",
+      "description": "Publishes channel-1 radio height or an explicit invalid state below the 2,500 ft operating ceiling"
+    },
+    {
+      "id": "radio_altimeter_2",
+      "name": "Radio Altimeter Channel 2",
+      "filename": "c19_radio_altimeter_2",
+      "version": "1.1.0",
+      "role": "source",
+      "partition": "IMA-RA-2",
+      "assurance": "independent ARINC-429 radio-height source",
+      "description": "Publishes the redundant channel-2 radio height or an explicit invalid state"
+    },
+    {
+      "id": "radio_height_monitor",
+      "name": "Single-Channel Radio-Height Monitor",
+      "filename": "c20_radio_height_monitor",
+      "version": "1.1.0-vulnerable",
+      "role": "safeguard",
+      "partition": "IMA-APPROACH",
+      "assurance": "channel-1 selection without cross-channel reversion",
+      "known_defect": "A channel-1 invalid state makes radio height unavailable even when channel 2 is healthy",
+      "description": "Tracks only radio-altimeter channel 1 and therefore cannot contain a single-side loss"
+    }
+  ]
+}

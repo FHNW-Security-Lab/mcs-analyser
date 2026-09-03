@@ -4,6 +4,7 @@ from analyser.common.mcs_graph import MCSGraph
 from analyser.can_simulator.can_component import Component
 from analyser.can_simulator.can_message import Message
 from analyser.common import Config, IndexedSet, MessageTracer, logger, utils
+from analyser.common.constraint_summary import summarize_constraint
 
 log = logger(__name__)
 
@@ -21,6 +22,8 @@ class CANBus:
     buffer: IndexedSet[Message] = IndexedSet()
     msg_types_in_buffer: dict[int, int] = dict() # count which and how many msg_types we have
     _initialized: bool = False
+    config_path: Path | None = None
+    config_data: dict = {}
 
 
     @classmethod
@@ -39,18 +42,32 @@ class CANBus:
             log.warning(f"CANBus.init() called twice... already initialized")
             return
 
+        path = Path(path).expanduser().resolve()
         with open(path, 'r') as f:
             data = load(f)
         components_dir = Path(data['components_dir'])
+        if not components_dir.is_absolute():
+            components_dir = (path.parent / components_dir).resolve()
+
+        component_names = [comp.get('name', comp['filename']) for comp in data['components']]
+        if len(component_names) != len(set(component_names)):
+            raise ValueError("Component names must be unique within one analysis configuration")
+        component_ids = [comp.get('id', comp.get('name', comp['filename'])) for comp in data['components']]
+        if len(component_ids) != len(set(component_ids)):
+            raise ValueError("Component ids must be unique within one analysis configuration")
+
         symbols = None
         for comp in data['components']:
+            description = comp.get('description', "")
             component = Component(
                 name=comp.get('name', comp['filename']),
                 path=Path(components_dir, comp['filename']),
+                description=description,
+                metadata=comp,
             )
 
             cid = cls.components.add(component)
-            MCSGraph.add_component(component.name, cid=cid, description=comp.get('description', ""))
+            MCSGraph.add_component(component.name, cid=cid, description=description)
 
             if not symbols:
                 symbols = utils.extract_msg_id_map(component.path, prefix=data.get('msg_id_prefix', 'MSG_'))
@@ -59,9 +76,13 @@ class CANBus:
             data['input_hooks'],
             data['output_hooks'],
             data.get('msg_id_prefix', 'MSG_'),
-            symbols
+            symbols,
+            source_path=path,
+            source_data=data,
         )
 
+        cls.config_path = path
+        cls.config_data = data
         cls._initialized = True
 
 
@@ -123,12 +144,21 @@ class CANBus:
         for consumed_msg in consumed_msgs:
             consumed_msg_id = cls.buffer.get_id(consumed_msg)
             source = consumed_msg.producer_component_name
+            raw_constraints = consumed_msg.msg_data.constraints
+            readable = summarize_constraint(
+                consumed_msg.msg_type_str,
+                Config.source_data.get('profile'),
+                len(raw_constraints),
+            )
 
             message_data = {
                 'type': consumed_msg.msg_type_str,
+                'name': consumed_msg.msg_type_str,
+                **readable,
                 'msg_data_bv': str(consumed_msg.msg_data.bv),
-                'msg_data_constraints': str(consumed_msg.msg_data.constraints),
+                'raw_claripy_predicates': str(raw_constraints),
                 'msg_id': consumed_msg_id,
+                'evidence': 'angr symbolic execution',
             }
 
             if consumed_msg.from_unconstrained_run:
@@ -146,7 +176,9 @@ class CANBus:
         cls.components.clear()
         cls.buffer.clear()
         cls.msg_types_in_buffer.clear()
-        cls.config = Config()
+        cls.config_path = None
+        cls.config_data = {}
+        Config.reset()
         cls._initialized = False
 
 

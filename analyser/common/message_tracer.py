@@ -129,3 +129,14 @@ class MessageTracer:
                     for path in paths
                 ]
         return traces
+
+    @classmethod
+    def get_productions(cls) -> list[dict]:
+        """Return a deterministic copy of the raw production provenance records."""
+        productions = []
+        for records in cls._producers_of.values():
+            for record in records:
+                copied = dict(record)
+                copied['consumed_msg_ids'] = sorted(record['consumed_msg_ids'])
+                productions.append(copied)
+        return sorted(productions, key=lambda item: item['production_id'])

@@ -1,0 +1,229 @@
+{
+  "schema_version": "albatros.aviation-mca-config/1.0.0",
+  "profile": "secure",
+  "system": {
+    "id": "albatros-afdx-aircraft-secure",
+    "name": "ALBATROS Secure AFDX Aircraft",
+    "version": "1.0.0",
+    "architecture": "x86-64 fixed-point native component model"
+  },
+  "analysis_reference": {
+    "fix": {"name": "Berlin reference fix", "latitude": 52.520008, "longitude": 13.404954},
+    "route_monitor": {"max_position_residual_m": 45.0, "max_cross_track_nm": 0.025},
+    "safety_envelope": {"max_pitch_deg": 18.0, "max_roll_deg": 32.0}
+  },
+  "protocol": {
+    "name": "ARINC 664 Part 7 / AFDX-like demonstrator protocol",
+    "transport": "stdio analysis harness: uint64 message id followed by uint64 payload",
+    "endianness": "host little-endian",
+    "position_encoding": "signed latitude_e6:int32 | signed longitude_e6:int32",
+    "attitude_encoding": "pitch_cdeg:int16 | roll_cdeg:int16 | yaw_cdeg:uint16 | flags:uint16"
+  },
+  "var_length": 64,
+  "input_hooks": ["scanf"],
+  "output_hooks": ["printf"],
+  "msg_id_prefix": "MSG_AFDX_",
+  "components_dir": "./bin/aviation/secure",
+  "components": [
+    {
+      "id": "gnss_receiver",
+      "name": "GNSS Receiver",
+      "filename": "c01_gnss_receiver",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-NAV-1",
+      "assurance": "receiver ICD validation",
+      "description": "GNSS receiver producing WGS-84 fixed-point position frames on an AFDX virtual link"
+    },
+    {
+      "id": "inertial_reference",
+      "name": "Inertial Reference System",
+      "filename": "c02_inertial_reference",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-NAV-2",
+      "assurance": "alignment and transport-wander monitor",
+      "description": "Independent IRS position estimate with an operational-region plausibility monitor"
+    },
+    {
+      "id": "radio_navigation",
+      "name": "Radio Navigation Receiver",
+      "filename": "c03_radio_navigation",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-NAV-3",
+      "assurance": "regional navaid coverage monitor",
+      "description": "Independent DME/DME or VOR/DME fixed-point position source"
+    },
+    {
+      "id": "air_data",
+      "name": "Air Data Computer",
+      "filename": "c04_air_data_computer",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-ADC",
+      "assurance": "range and consistency validation",
+      "description": "Altitude, vertical-speed and indicated-airspeed source"
+    },
+    {
+      "id": "attitude_reference",
+      "name": "Attitude and Heading Reference",
+      "filename": "c05_attitude_reference",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-AHRS",
+      "assurance": "physical attitude range validation",
+      "description": "Pitch, roll and true-heading source in centidegree fixed point"
+    },
+    {
+      "id": "weather_radar",
+      "name": "Weather Radar",
+      "filename": "c06_weather_radar",
+      "version": "1.0.0",
+      "role": "source",
+      "partition": "IMA-WXR",
+      "assurance": "weather product range validation",
+      "description": "Wind, turbulence and icing inputs used by the flight-management logic"
+    },
+    {
+      "id": "navigation_fusion",
+      "name": "Secure Navigation Fusion",
+      "filename": "c07_navigation_fusion",
+      "version": "1.0.0-secure",
+      "role": "processor",
+      "partition": "IMA-NAV-FUSION",
+      "assurance": "route-aided two-of-three GNSS/IRS/radio voting with a 45 m residual",
+      "description": "Prefers route-consistent INS, falls back to radio plus GNSS agreement, and labels outlier-rejected solutions as degraded"
+    },
+    {
+      "id": "flight_management",
+      "name": "Flight Management System",
+      "filename": "c08_flight_management",
+      "version": "1.0.0",
+      "role": "processor",
+      "partition": "IMA-FMS",
+      "assurance": "bounded fixed-point guidance target generation",
+      "description": "Computes lateral guidance targets and publishes the causally tracked position"
+    },
+    {
+      "id": "flight_guidance",
+      "name": "Flight Guidance Computer",
+      "filename": "c09_flight_guidance",
+      "version": "1.0.0",
+      "role": "processor",
+      "partition": "IMA-FG",
+      "assurance": "attitude correction and command shaping",
+      "description": "Converts FMS and measured-attitude inputs into pitch/roll/yaw commands"
+    },
+    {
+      "id": "envelope_protection",
+      "name": "Secure Envelope Protection",
+      "filename": "c10_envelope_protection",
+      "version": "1.0.0-secure",
+      "role": "safeguard",
+      "partition": "FCC-PRIMARY",
+      "assurance": "independent pitch and roll command limiting",
+      "description": "Always enforces 18 degree pitch and 32 degree roll command limits"
+    },
+    {
+      "id": "actuator_control",
+      "name": "Actuator Control Electronics",
+      "filename": "c11_actuator_control",
+      "version": "1.0.0",
+      "role": "processor",
+      "partition": "ACE-1",
+      "assurance": "mechanical travel monitor",
+      "description": "Checks protected commands against physical actuator travel and drives the surface effect"
+    },
+    {
+      "id": "aircraft_effect",
+      "name": "Aircraft Dynamics Effect",
+      "filename": "c12_aircraft_effect",
+      "version": "1.0.0",
+      "role": "effect",
+      "partition": "PLANT-MODEL",
+      "assurance": "safety-property observation point",
+      "description": "Classifies reachable position and attitude effects as nominal, diverged or unsafe"
+    },
+    {
+      "id": "primary_display",
+      "name": "Primary Flight Display",
+      "filename": "c13_primary_display",
+      "version": "1.0.0",
+      "role": "sink",
+      "partition": "IMA-DISPLAY",
+      "assurance": "independent state annunciation",
+      "description": "Consumer-only terminal sink for nominal, diverged and unsafe aircraft states"
+    },
+    {
+      "id": "data_loader",
+      "name": "EFB Data Loader Boundary",
+      "filename": "c14_data_loader",
+      "version": "1.1.0",
+      "role": "source",
+      "partition": "ASD-DLS",
+      "assurance": "typed one-way route-load publication",
+      "description": "Models the EFB/DLS trust-boundary input as a fixed-width active-leg route load"
+    },
+    {
+      "id": "route_integrity",
+      "name": "Secure Route Load Integrity",
+      "filename": "c15_route_integrity",
+      "version": "1.1.0-secure",
+      "role": "safeguard",
+      "partition": "ACD-GATEWAY",
+      "assurance": "signature/revision abstraction plus geographic corridor validation",
+      "description": "Rejects an untrusted route load unless its active-leg fix satisfies the validated route corridor"
+    },
+    {
+      "id": "control_domain_ingress",
+      "name": "Adversarial Control-Domain Ingress",
+      "filename": "c16_control_domain_ingress",
+      "version": "1.1.0",
+      "role": "source",
+      "partition": "ACD-BOUNDARY",
+      "assurance": "explicit untrusted-source labeling",
+      "description": "Synthetic boundary source for post-fusion navigation injection and forged guidance frames"
+    },
+    {
+      "id": "afdx_ingress_guard",
+      "name": "Secure AFDX Publisher Guard",
+      "filename": "c17_afdx_ingress_guard",
+      "version": "1.1.0-secure",
+      "role": "safeguard",
+      "partition": "ACD-VL-GUARD",
+      "assurance": "publisher virtual-link allow-list",
+      "description": "Rejects navigation and guidance frames whose producer is outside the configured publisher set"
+    },
+    {
+      "id": "radio_altimeter_1",
+      "name": "Radio Altimeter Channel 1",
+      "filename": "c18_radio_altimeter_1",
+      "version": "1.1.0",
+      "role": "source",
+      "partition": "IMA-RA-1",
+      "assurance": "ARINC-429 radio-height range and validity encoding",
+      "description": "Publishes channel-1 radio height or an explicit invalid state below the 2,500 ft operating ceiling"
+    },
+    {
+      "id": "radio_altimeter_2",
+      "name": "Radio Altimeter Channel 2",
+      "filename": "c19_radio_altimeter_2",
+      "version": "1.1.0",
+      "role": "source",
+      "partition": "IMA-RA-2",
+      "assurance": "independent ARINC-429 radio-height source",
+      "description": "Publishes the redundant channel-2 radio height or an explicit invalid state"
+    },
+    {
+      "id": "radio_height_monitor",
+      "name": "Dual Radio-Height Monitor",
+      "filename": "c20_radio_height_monitor",
+      "version": "1.1.0-secure",
+      "role": "safeguard",
+      "partition": "IMA-APPROACH",
+      "assurance": "two-channel selection with explicit unavailable reversion",
+      "description": "Selects either valid radio-altimeter channel and reports unavailable only when neither side is valid"
+    }
+  ]
+}

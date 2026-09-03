@@ -38,7 +38,7 @@ class MCSGraph(MultiDiGraph):
         """Reset the graph while keeping the same instance"""
         if cls._instance is not None:
             cls._instance.clear()  # MultiDiGraph's clear method
-            # Don't reset type_color_map - it can be reused
+            cls._instance.type_color_map = None
             # Don't reset vc - keep the connection
             log.debug("MCSGraph reset")
 
@@ -46,7 +46,7 @@ class MCSGraph(MultiDiGraph):
     def add_component(cls, name: str, cid: int, description: str):
         """Add a component node to the graph"""
         instance = cls.get_instance()
-        instance.add_node(name, cid=cid, description=description)
+        instance.add_node(name, name=name, cid=cid, description=description)
         log.debug(f"Added component node: {name}")
 
     @classmethod
@@ -95,6 +95,87 @@ class MCSGraph(MultiDiGraph):
 
         return dict(zip(msg_type_strs, colors))
 
+    @staticmethod
+    def _with_aircraft_plant(graph: MultiDiGraph) -> MultiDiGraph:
+        """Add a non-MCA physical consequence layer to an aviation display copy."""
+        # MultiDiGraph.copy() constructs ``graph.__class__``. MCSGraph is a
+        # singleton, so that would return and mutate the live evidence graph.
+        # The visualization overlay must be an intentionally plain graph.
+        display_graph = MultiDiGraph(graph)
+        schema = str(Config.source_data.get('schema_version', ''))
+        if not schema.startswith('albatros.aviation-mca-config/'):
+            return display_graph
+
+        physical_nodes = [
+            ('CONFIGURED · Autothrust / FADEC', 'configured controller', 'Converts the FMS speed/thrust target into a bounded engine command.'),
+            ('PHYSICAL · Ailerons', 'control surface', 'Produces aircraft roll moment.'),
+            ('PHYSICAL · Elevator', 'control surface', 'Produces aircraft pitch moment.'),
+            ('PHYSICAL · Rudder', 'control surface', 'Produces aircraft yaw moment.'),
+            ('PHYSICAL · Engines / thrust', 'propulsion', 'Accepts the FADEC command and produces bounded thrust.'),
+            ('PHYSICAL · Aircraft dynamics', 'rigid-body plant', 'Integrates aerodynamic forces and moments into aircraft motion.'),
+            ('PHYSICAL · Position + attitude', 'physical state', 'Geographic position, altitude, pitch, roll, yaw, and airspeed.'),
+        ]
+        for name, role, description in physical_nodes:
+            display_graph.add_node(
+                name,
+                name=name,
+                type='configured physical actor',
+                role=role,
+                color='#b78545' if role in {'configured controller', 'control surface', 'propulsion'} else '#708790',
+                description=description,
+                binary='none — physical plant boundary',
+                evidence='configured bounded plant relation; not derived by angr',
+            )
+
+        component_name_by_id = {
+            data.get('component_id'): name
+            for name, data in display_graph.nodes(data=True)
+            if data.get('component_id')
+        }
+        actuator = component_name_by_id.get('actuator_control')
+        fms = component_name_by_id.get('flight_management')
+        observer = component_name_by_id.get('aircraft_effect')
+
+        def plant_edge(source: str | None, target: str | None, name: str) -> None:
+            if source is None or target is None or source not in display_graph or target not in display_graph:
+                return
+            display_graph.add_edge(
+                source,
+                target,
+                name=f'PLANT · {name}',
+                type='configured physical transition',
+                color='#b78545',
+                constraint_readable='bounded physical response',
+                constraint_meaning='Plant-model relation outside native binary symbolic execution.',
+                evidence='configured plant overlay — not MCA-derived',
+            )
+
+        for surface in ('PHYSICAL · Ailerons', 'PHYSICAL · Elevator', 'PHYSICAL · Rudder'):
+            plant_edge(actuator, surface, 'surface command')
+            plant_edge(surface, 'PHYSICAL · Aircraft dynamics', 'aerodynamic moment')
+            plant_edge(surface, actuator, 'surface-position feedback')
+        plant_edge(fms, 'CONFIGURED · Autothrust / FADEC', 'speed / thrust target')
+        plant_edge('CONFIGURED · Autothrust / FADEC', 'PHYSICAL · Engines / thrust', 'fuel / thrust command')
+        plant_edge('PHYSICAL · Engines / thrust', 'CONFIGURED · Autothrust / FADEC', 'N1 / EGT feedback')
+        plant_edge('PHYSICAL · Engines / thrust', 'PHYSICAL · Aircraft dynamics', 'bounded thrust')
+        plant_edge('PHYSICAL · Aircraft dynamics', 'PHYSICAL · Position + attitude', 'integrated motion')
+        plant_edge('PHYSICAL · Position + attitude', observer, 'observed consequence')
+
+        # Close the visual control loop. These are environment/measurement
+        # relations into the analyzed sensor binaries, not recovered bus edges.
+        feedback_by_component = {
+            'gnss_receiver': 'position / velocity measurement',
+            'inertial_reference': 'specific force / angular-rate measurement',
+            'radio_navigation': 'navaid geometry measurement',
+            'air_data': 'pressure / airspeed measurement',
+            'attitude_reference': 'attitude / body-rate measurement',
+            'radio_altimeter_1': 'radio-height measurement',
+            'radio_altimeter_2': 'independent radio-height measurement',
+        }
+        for component_id, measurement in feedback_by_component.items():
+            plant_edge('PHYSICAL · Position + attitude', component_name_by_id.get(component_id), measurement)
+        return display_graph
+
     @classmethod
     def visualize(cls, step_mode=False, tracing=True):
         """Visualize the graph"""
@@ -110,27 +191,51 @@ class MCSGraph(MultiDiGraph):
         traces = None
         if tracing:
             traces = MessageTracer.get_traces_dict(CANBus.buffer.keys())
-        # Color nodes based on type
+        role_colors = {
+            'source': '#3f86a5',
+            'processor': '#3f7778',
+            'safeguard': '#20baa6',
+            'effect': '#c89547',
+            'sink': '#71858a',
+        }
+
+        # Preserve the aircraft architecture metadata in Schnauzer so the
+        # standalone inspector can show assurance roles and known defects.
         for node, cid in instance.nodes(data='cid'):
             c = CANBus.components[cid]
-            if len(c.consumed_ids) == 0:
-                instance.nodes[node]['type'] = 'source component'
-                instance.nodes[node]['color'] = '#20BAA6'
-            elif len(c.produced_ids) == 0:
-                instance.nodes[node]['type'] = 'sink component'
-                instance.nodes[node]['color'] = '#59AFE2'
-            else:
-                instance.nodes[node]['type'] = 'component'
-                instance.nodes[node]['color'] = '#596BE2'
+            role = c.metadata.get('role')
+            if not role:
+                role = 'source' if len(c.consumed_ids) == 0 else 'sink' if len(c.produced_ids) == 0 else 'processor'
+            instance.nodes[node].update({
+                'component_id': c.component_id,
+                'type': f'{role} component',
+                'role': role,
+                'color': role_colors.get(role, '#596be2'),
+                'binary': c.path.name,
+                'version': c.metadata.get('version', 'not declared'),
+                'partition': c.metadata.get('partition', 'not declared'),
+                'assurance': c.metadata.get('assurance', 'not declared'),
+                'consumes': len(c.consumed_ids),
+                'produces': len(c.produced_ids),
+            })
+            if c.metadata.get('known_defect'):
+                instance.nodes[node]['known_defect'] = c.metadata['known_defect']
 
         # Color edges based on message type
         for u, v, k, d in instance.edges(keys=True, data='type'):
             color = instance.type_color_map.get(d, '#CCCCCC')
             instance.edges[u, v, k]['color'] = color
 
+        system = Config.source_data.get('system', {})
+        title = system.get('name', 'MCS Communication')
+        profile = Config.source_data.get('profile')
+        if profile:
+            title = f'{title} · {profile.upper()}'
+
+        display_graph = cls._with_aircraft_plant(instance)
         instance.vc.send_graph(
-            instance,
-            title="MCS Communication",
+            display_graph,
+            title=title,
             traces=traces
         )
 

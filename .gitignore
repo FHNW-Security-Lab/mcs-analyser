@@ -1,5 +1,16 @@
 *.pdf
 
+# Local development/runtime outputs
+.venv/
+.pi/
+node_modules/
+web/dist/
+web/public/analysis/*.json
+standalone_output/
+tmp/
+bin/aviation/secure/
+bin/aviation/vulnerable/
+
 # Created by https://www.toptal.com/developers/gitignore/api/pycharm+all,python,assembler,cmake,latex,macos,windows,linux
 # Edit at https://www.toptal.com/developers/gitignore?templates=pycharm+all,python,assembler,cmake,latex,macos,windows,linux
 
@@ -671,5 +682,3 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/pycharm+all,python,assembler,cmake,latex,macos,windows,linux
-
-

@@ -8,6 +8,7 @@ from analyser.common import logger, Config
 log = logger(__name__)
 
 NUM_FIND = 100
+MAX_OUTPUT_CONTINUATION_ROUNDS = 16
 
 class ComponentAnalyser:
 
@@ -35,7 +36,11 @@ class ComponentAnalyser:
         self.proj = angr.Project(self.component.path, auto_load_libs=False)
         self.cfg = self.proj.analyses.CFGEmulated()
         self.input_addrs = self._find_addr(Config.input_hooks)
-        self.output_addrs = self._find_addr(Config.output_hooks)
+        output_is_optional = self.component.metadata.get('role') == 'sink'
+        self.output_addrs = self._find_addr(
+            Config.output_hooks,
+            warn_if_missing=not output_is_optional,
+        )
         self.entry_points = self._get_sim_states(self.input_addrs.keys())
         self.output_checker = setup_output_checker(self.component, self.output_addrs)
 
@@ -91,23 +96,33 @@ class ComponentAnalyser:
                         num_find=NUM_FIND,
                     )
 
-                    all_solutions = []
+                    solution_count = 0
                     current_batch = simgr.found
+                    continuation_round = 0
                     log.debug(f"Found {len(current_batch)} initial solutions. Exploring deeper within the binary...")
-                    while current_batch:
-                        all_solutions.extend(current_batch)
+                    while current_batch and continuation_round < MAX_OUTPUT_CONTINUATION_ROUNDS:
+                        solution_count += len(current_batch)
                         additional_solutions = []
                         for state in current_batch:
                             new_simgr = self.proj.factory.simgr(state.copy())
                             new_simgr.step()
+                            # A found state is at an external output PLT entry.
+                            # CFGEmulated does not model the continuation back from
+                            # that stub reliably, so reusing it here prunes valid
+                            # later output calls on the same native execution path.
                             new_simgr.explore(
                                 find=list(self.output_addrs.keys()),
-                                cfg=self.cfg,
                                 num_find=NUM_FIND,
                             )
                             additional_solutions.extend(new_simgr.found)
                         current_batch = additional_solutions
-                    log.info(f"Found {len(all_solutions)} solutions.")
+                        continuation_round += 1
+                    if current_batch:
+                        log.warning(
+                            f"Stopped output continuation after {MAX_OUTPUT_CONTINUATION_ROUNDS} rounds "
+                            f"for {self.component.name}"
+                        )
+                    log.info(f"Found {solution_count} solutions.")
                 else:
                     all_states = []
                     step_count = 0
@@ -146,17 +161,23 @@ class ComponentAnalyser:
         result: Message | None = self.output_checker.check(state, self.output_addrs.keys())
         if result is not None:
             self.component.update_max_expected_inputs(InputTracker.max_inputs_counted)
-            if InputTracker.yield_unconstrained and len(self.component.consumed_ids) > 0:
+            # Preserve discovery-run provenance through the full component chain.
+            # Without this, an output derived from a synthetic unconstrained bus
+            # message becomes indistinguishable from a genuinely reachable one as
+            # soon as it passes through a second component.
+            consumed_messages = InputTracker.get_consumed_messages()
+            if ((InputTracker.yield_unconstrained and len(self.component.consumed_ids) > 0)
+                    or any(message.from_unconstrained_run for message in consumed_messages)):
                 result.from_unconstrained_run = True
             if result.msg_type.is_symbolic():
                 log.warning(f"{self.component.name} produced a symbolic msg_id {result.msg_type}")
             else:
                 self.component.add_production(result.msg_type.bv.concrete_value)
 
-            CANBus.write(result, InputTracker.get_consumed_messages())
+            CANBus.write(result, consumed_messages)
 
 
-    def _find_addr(self, names: list[str]):
+    def _find_addr(self, names: list[str], *, warn_if_missing: bool = True):
         """
         Find addresses of functions matching the given names.
         :param names:
@@ -177,8 +198,13 @@ class ComponentAnalyser:
                     found[func.addr] = normalized_name
                 else:
                     log.debug(f"Ignoring {func.name} at {hex(func.addr)} as it is not executable. Probably a GOT entry")
-        if not found:
+        if not found and warn_if_missing:
             log.warning(f"No addresses found for {pattern}")
+        elif not found:
+            log.debug(
+                f"No output addresses expected for consumer-only component "
+                f"{self.component.name}"
+            )
         return found
 
 

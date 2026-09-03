@@ -1,5 +1,161 @@
-# Multi-Component System Analyser
-A binary analysis tool to simulate and visualise the communication paths of multi-component systems.
+# Multi-Component System Analyser + ALBATROS Aviation Demonstrator
+
+This repository now contains two connected pieces:
+
+- the original angr-based Multi-Component System (MCS) Analyzer, which
+  symbolically executes native component binaries and discovers constrained
+  message/failure chains; and
+- an ALBATROS aviation demonstrator with real compiled avionics mock
+  components, secure/vulnerable aircraft twins, a bounded aircraft-state
+  reachability model, attack/fault scenarios, and a web visualization.
+
+The demonstrator actually compiles and runs the aircraft binaries through the
+MCS Analyzer. Its web graph is loaded from the resulting JSON artifacts rather
+than being handwritten.
+
+## Aviation demo quick start
+
+Requirements: Python 3.12, GCC, Node.js 20+, npm, and a POSIX shell.
+
+```bash
+cd mcs-analyser
+
+# Creates the Python 3.12 venv, installs pinned angr dependencies,
+# installs the web dependencies, and builds native components.
+make setup
+
+# Runs real headless angr analyses for both aircraft profiles.
+make analysis
+
+# Builds the React application and starts the single-page/API server.
+make web-build
+make serve
+```
+
+Open `http://127.0.0.1:5000`.
+
+## Standalone MCS Analyzer + Schnauzer
+
+The aircraft MCS analysis is also available as an independent program. It does
+not load the flight demonstrator and runs on Schnauzer's own server at
+`http://127.0.0.1:8080`.
+
+```bash
+# Real secure-aircraft angr analysis + standalone Schnauzer
+make standalone-mcs-secure
+
+# Real vulnerable-aircraft angr analysis + standalone Schnauzer
+make standalone-mcs-vulnerable
+```
+
+Each command starts Schnauzer, opens its independent graph application, runs
+the real MCS Analyzer against the same 20-component aircraft architecture, and
+keeps the program open until `Ctrl+C`. Standalone JSON results are written to
+`standalone_output/`.
+
+The standalone graph continues beyond the analyzed avionics with explicitly
+marked physical boxes for autothrust/FADEC, ailerons, elevator, rudder,
+engines/thrust, rigid-body dynamics, and resulting position/attitude. Command
+links flow into those actors at the end of the control chain. Dashed feedback
+links return surface position, engine N1/EGT, position, attitude, air data, and
+radio height to the corresponding controller or sensor components. Those amber
+plant links are configured consequence relations, not claims about
+angr-analyzed binaries.
+Message edges show a compact aviation formula and meaning first, while the
+complete Claripy predicates remain available as `raw_claripy_predicates`.
+
+Custom ports or compatible configurations can be supplied directly:
+
+```bash
+.venv/bin/python scripts/run_standalone_mcs.py \
+  --config config_aviation_secure.json \
+  --web-port 8080 \
+  --backend-port 8086
+```
+
+For a clean existing environment, the complete verification sequence is:
+
+```bash
+make analysis
+make test
+make web-build
+```
+
+The analysis results are written to:
+
+- `web/public/analysis/aviation-secure.json`
+- `web/public/analysis/aviation-vulnerable.json`
+
+Each artifact contains tool versions, config and binary SHA-256 hashes,
+components, message types, symbolic payload expressions, constraints,
+productions, communication edges, causal traces, and safety findings. The web
+page can rerun the same pipeline through the backend.
+
+## What is modeled
+
+The 20-component native x86-64 chain contains GNSS, INS, radio navigation, air
+data, attitude/heading, weather, navigation fusion, an EFB/DLS route loader and
+integrity monitor, an explicitly untrusted control-domain ingress and AFDX
+guard, two radio-altimeter channels and their monitor, FMS, flight guidance,
+envelope protection, actuator control, an aircraft-effect observer, and the
+primary display. Payloads use fixed-point WGS84, attitude, air-data, route,
+guidance, and radio-height encodings over an AFDX-inspired logical protocol.
+
+The secure build applies independent navigation consistency and envelope
+checks. The vulnerable build deliberately over-trusts GNSS and has a
+direct-mode envelope bypass. Both use the same route, scenario, environment,
+and physical model in the browser.
+
+The webpage provides:
+
+- real WGS84 routes and OpenStreetMap context;
+- runway-aligned ground roll, rotation, climb, cruise, descent, approach, and
+  landing phases with rate-limited airspeed and vertical-speed dynamics;
+- an independent research-aircraft plant envelope that caps altitude at
+  20,000 ft, bank at 55 degrees, pitch at 25 degrees, and speed/rate states
+  before numerical integration can produce impossible values;
+- separate true, estimated, and commanded aircraft state;
+- nose-forward heading markers, side-by-side secure/vulnerable tracks, attitude
+  displays, explicit angle-of-attack (Anstellwinkel) and flight-path-angle
+  (Steigungswinkel) telemetry, and a planned-versus-actual vertical profile;
+- eleven staged scenarios covering single- and multi-source navigation
+  deception, post-fusion tampering, degraded and total navigation loss,
+  EFB/DLS route tampering, finite AFDX guidance injection, FMS steering denial,
+  MCDU altitude tampering, approach-gated radio-height invalidity, and bounded
+  weather/gust disturbance;
+- explicit preconditions, operating windows, signal properties, detection
+  cues, causal dependencies, finite effect profiles, and native/partial/
+  configured/plant evidence coverage for every scenario;
+- configurable roll, pitch, yaw-rate, course, and altitude limits;
+- component-level propagation/containment animation;
+- an interactive Cytoscape system graph derived from the actual MCA artifacts,
+  with component/edge inspection, search, alternate layouts, scenario overlays,
+  symbolic origin/unsafe-witness tracing, and keyboard-selectable transitions;
+- selection-scoped constraint evidence with readable aviation-contract
+  explanations, exact captured Claripy expressions, and decoded concrete
+  witnesses, plus the complete constraint table, hashes, and run status;
+- bounded reachable position tubes, concrete violation witnesses, and explicit
+  availability/reversion results for non-kinematic faults;
+- an inverse unsafe-state query: set a target roll, pitch, yaw/course, or
+  altitude deviation and solve backward for admissible bounded inputs, native
+  component paths, and secure-profile blocking safeguards.
+
+“All possible positions” always means all states represented by the declared
+input bounds, component contracts, finite scenario-relative horizon, and
+simplified plant. Phase/AGL gates are assumed satisfied for that local analysis
+window and remain enforced directly by the global-clock runtime simulation. The
+MCS Analyzer itself discovers software message chains; the separate bounded
+zonotope layer adds the physical dynamics that the analyzer paper explicitly
+places out of scope. See [the architecture document](docs/ARCHITECTURE.md) for
+the exact claim boundary, equations, attack mapping, and limitations.
+
+This is a research demonstrator. It must not be used for operational
+navigation, flight control, certification, or safety decisions.
+
+## Original MCS Analyzer
+
+A binary analysis tool to simulate and visualise the communication paths of
+multi-component systems.
 
 ### Dependencies:
 - angr: https://github.com/angr/angr (binary analysis)
@@ -18,7 +174,7 @@ This tool is developed as part of my bachelors thesis: *link follows*. Read the 
 5. `pip install -r requirements.txt`
 ### Run in two separate terminals (both inside .venv environment):
 - Visualisation Server: `schnauzer-server`
-- MCS Analyser: `python main.py --config config_ce`
+- MCS Analyser: `.venv/bin/python main.py --config config_cesna.json`
 
 
 ## Graph Visualisation:
@@ -259,4 +415,3 @@ The common package contains a variety of utilities and functionality that is use
 - An *IOState* is a simple container that stores a bitvector and its constraints as a single object. This simplifies the passing of input and output values between the various components.
 
 - The *IndexedSet* is a generic set extension that generates auto-incrementing IDs for elements added to the set. This is used to automatically assign IDs to messages and components in the bus while avoiding duplicates at the same time.
-

@@ -46,6 +46,10 @@ def main():
                        help='Enable debug logging (verbose output)')
     parser.add_argument('--silent', '-q', action='store_true',
                        help='Enable silent mode (warnings and errors only)')
+    parser.add_argument('--no-visualize', action='store_true',
+                       help='Run headlessly without sending data to Schnauzer')
+    parser.add_argument('--export-json', type=Path,
+                       help='Write a strict machine-readable analysis snapshot')
 
     args = parser.parse_args()
 
@@ -76,8 +80,16 @@ def main():
         log.error(f"Configuration file not found: {config_path}")
         return
 
+    if args.step and args.no_visualize:
+        log.warning("--step has no effect together with --no-visualize")
+
     co = Coordinator()
-    co.run(config_path=config_path, step_mode=args.step)
+    co.run(
+        config_path=config_path,
+        step_mode=args.step,
+        visualize=not args.no_visualize,
+        export_path=args.export_json,
+    )
 
 
 if __name__ == "__main__":
